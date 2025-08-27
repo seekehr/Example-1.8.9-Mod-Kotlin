@@ -1,3 +1,5 @@
+Updated/fixed some dependency issues.
+
 This template is an example 1.8.9 forge mod written in Kotlin that builds upon
 nea's [template](https://github.com/romangraef/Forge1.8.9Template/tree/kotlin).
 It is written by [SkyHanni](https://github.com/hannibal002/SkyHanni) developers, with the intent to show how easy it is
