@@ -1,9 +1,11 @@
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+import org.gradle.api.tasks.JavaExec // Import the required class for JavaExec tasks
+import org.gradle.jvm.toolchain.JavaToolchainService // Import the service to access toolchains
 
 plugins {
     idea
     java
-    id("gg.essential.loom") version "0.10+"
+    id("gg.essential.loom") version "1.3+"
     id("dev.architectury.architectury-pack200") version "0.1.3"
     id("com.github.johnrengelman.shadow") version "8.1.1"
     kotlin("jvm") version "1.9.0"
@@ -20,6 +22,9 @@ val modid: String by project
 java {
     toolchain.languageVersion.set(JavaLanguageVersion.of(8))
 }
+
+// Get the Java Toolchain service to find the JDK path
+val javaToolchains = project.extensions.getByType(JavaToolchainService::class.java)
 
 sourceSets.main {
     output.setResourcesDir(sourceSets.main.flatMap { it.java.classesDirectory })
@@ -54,11 +59,16 @@ val devenvMod: Configuration by configurations.creating {
 }
 
 dependencies {
+    // Annotation processors for Mixins
+    annotationProcessor("com.google.code.gson:gson:2.2.4")
+    annotationProcessor("com.google.guava:guava:17.0")
+    annotationProcessor("org.spongepowered:mixin:0.8.5-SNAPSHOT")
+
     minecraft("com.mojang:minecraft:1.8.9")
     mappings("de.oceanlabs.mcp:mcp_stable:22-1.8.9")
     forge("net.minecraftforge:forge:1.8.9-11.15.1.2318-1.8.9")
 
-    implementation(kotlin("stdlib-jdk8")) // keep if you want explicit stdlib
+    implementation(kotlin("stdlib-jdk8"))
     shadowImpl("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3") {
         exclude(group = "org.jetbrains.kotlin")
     }
@@ -67,26 +77,45 @@ dependencies {
     shadowImpl("org.spongepowered:mixin:0.7.11-SNAPSHOT") {
         isTransitive = false
     }
-    annotationProcessor("org.spongepowered:mixin:0.8.5-SNAPSHOT")
 
     // Optional: DevAuth
     runtimeOnly("me.djtheredstoner:DevAuth-forge-legacy:1.1.2")
 
+    // Assuming libs.moulconfig and libs.libautoupdate are defined in your gradle/libs.versions.toml
     shadowModImpl(libs.moulconfig)
     devenvMod(variantOf(libs.moulconfig) { classifier("test") })
-
     shadowImpl(libs.libautoupdate)
+
     shadowImpl("org.jetbrains.kotlin:kotlin-reflect:1.9.0")
+    shadowImpl("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3") {
+        exclude(group = "org.jetbrains.kotlin")
+        exclude(group = "com.google.code.gson")
+    }
+    shadowImpl("org.spongepowered:mixin:0.7.11-SNAPSHOT") {
+        isTransitive = false
+        exclude(group = "com.google.code.gson")
+    }
+    shadowImpl(libs.libautoupdate) {
+        exclude(group = "com.google.code.gson")
+    }
 }
+
+configurations.all {
+    resolutionStrategy {
+        force("com.google.code.gson:gson:2.2.4")
+    }
+}
+
 
 // Loom config
 loom {
-    launchConfigs {
-        "client" {
+    runs {
+        named("client") {
+            client()
             property("mixin.debug", "true")
-            property("asmhelper.verbose", "true")
-            arg("--tweakClass", "org.spongepowered.asm.launch.MixinTweaker")
-            arg("--mods", devenvMod.resolve().joinToString(",") { it.relativeTo(file("run")).path })
+        }
+        named("server") {
+            server()
         }
     }
     forge {
@@ -112,9 +141,17 @@ kotlin {
 tasks.compileJava {
     dependsOn(tasks.processResources)
 }
+
+// This is the correct way to set the runtime JDK for runClient
+tasks.withType<JavaExec>().configureEach {
+    val launcher = javaToolchains.launcherFor(java.toolchain)
+    javaLauncher.set(launcher)
+}
+
 tasks.withType<JavaCompile> {
     options.encoding = "UTF-8"
 }
+
 tasks.withType<Jar> {
     archiveBaseName.set(modid)
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
@@ -143,10 +180,7 @@ val remapJar by tasks.named<net.fabricmc.loom.task.RemapJarTask>("remapJar") {
     from(tasks.shadowJar)
     input.set(tasks.shadowJar.get().archiveFile)
 }
-tasks.jar {
-    archiveClassifier.set("without-deps")
-    destinationDirectory.set(layout.buildDirectory.dir("badjars"))
-}
+
 tasks.shadowJar {
     destinationDirectory.set(layout.buildDirectory.dir("badjars"))
     archiveClassifier.set("all-dev")
